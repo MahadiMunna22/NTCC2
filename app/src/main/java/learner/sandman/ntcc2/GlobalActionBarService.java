@@ -71,17 +71,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 	@Override
 	protected void onServiceConnected() {
-
-		Log.d("TAG1","STARTed service");
 		//**************SETTINGP UP OPENCV FOR USE****************************//
 		if(OpenCVLoader.initDebug()){
 			Log.d("TAG1","OpenCv started successfully");
 		}
-		//making an optical flow detector for future use
-
-
 		//******************MAKING A LAYOUT FOR THE FACE*************************//
-		//faceFrameLayout=new FrameLayout(this);
 		//getting ref to the faceLayout
 		faceView= LayoutInflater.from(this).inflate(R.layout.face_layout,null);
 		//getting a windowmanager
@@ -97,10 +91,10 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		faceParams.gravity= Gravity.TOP|Gravity.LEFT;
 		faceParams.x=0;
 		faceParams.y=0;
+		faceParams.alpha= (float) 0.005;
 		//telling windowmanager to add my faceview on  screen top using my params
 		myWindowManager.addView(faceView,faceParams);
 		//**********************MAKING A LAYOUT FOR THE CURSOR************************//
-
 		cursorFrameLayout=new FrameLayout(this);
 		cursorParams=new WindowManager.LayoutParams(
 				WindowManager.LayoutParams.WRAP_CONTENT,
@@ -110,7 +104,6 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				PixelFormat.TRANSLUCENT
 		);
 		cursorParams.gravity=Gravity.TOP|Gravity.LEFT;
-		Log.d("TAG1","I CAME HERE");
 		LayoutInflater inflater=LayoutInflater.from(this);
 		Log.d("TAG1","I CAME HERE2");
 		inflater.inflate(R.layout.cursor_layout,cursorFrameLayout);
@@ -165,6 +158,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				//making an intefer array of length 4 to store
 				//1)x co-ordinate 2)y co-ordinate 3)row size 4)col-size
 				int[] receivedValues=receivedBundle.getIntArray("message");
+				//processing the received data
+
 				xPositionOnBox=receivedValues[0];
 				yPositionOnBox=receivedValues[1];
 
@@ -178,7 +173,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 				xPositionOnScreen=xPositionOnScreen*xMultiplicityFactor;
 				yPositionOnScreen=yPositionOnScreen*yMultiplicityFactor;
-
+				//moving the cursor
 				cursorParams.x=xPositionOnScreen;
 				cursorParams.y=yPositionOnScreen;
 				Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
@@ -199,6 +194,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	//*************************FUNCTIONS RELATED TO OPENCV****************************//
 	@Override
 	public void onCameraViewStarted(int width, int height) {
+		//these variables are used in KLT
 		mPrevGrayt = new Mat();
 		features = new MatOfPoint();
 		prevFeatures = new MatOfPoint2f();
@@ -215,19 +211,12 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 	@Override
 	public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-
-		//the old centrePoints
-
-
 		//increasing frame counts
 		frameCount++;
-		//Log.d("TAG1","Current Frame Count="+frameCount);
 		//if the  total number of frames processed till now becomes 10k, then we reset the counter
 		if(frameCount==10000){
 			frameCount=0;
 		}
-
-
 		//setting up the RGBA matrix
 		Mat mRgba=inputFrame.rgba();
 		Mat mRgbat=mRgba.t();
@@ -240,22 +229,18 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		Imgproc.resize(mGrayt,mGrayt,mGray.size());
 		//doing the detection work
 		MatOfRect faces = new MatOfRect();
-
-
-
 		//************************THE CODE FOR VIOLA JONES STARTS HERE**********************//
-		//after every 20 frames i am using viola jones and getting the nasal co-ordinates
+		//after every 30 frames i am using viola jones and getting the nasal co-ordinates
 		if(frameCount%30==0){
 			//********************************PART 1*********************************************//
+			//if the classifiers are available then i do the detection and store the detected faces
+			//in the array
 			if(haarCascade != null) {
-				//Log.d("TAG1","Detection going on");
 				haarCascade.detectMultiScale(mGrayt, faces, 1.1, 2,
 						2, new Size(100,100), new Size());
-
 			}
-			//
-			//*****************************************************************************//
 			//*******************************PART 2**********************************************//
+			//faces array stores the detected faces...simply speaking
 			Rect[] facesArray = faces.toArray();
 			for (int i = 0; i < facesArray.length; i++) {
 				//this code inserts the squares where the faces have been found
@@ -265,50 +250,41 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				Point centrePoint=new Point();
 				centrePoint.x=	facesArray[i].tl().x/2	+facesArray[i].br().x/2;
 				centrePoint.y=	facesArray[i].tl().y/2	+facesArray[i].br().y/2;
+				//i keep the centrePoint in nose point for KLT ,nosePoint is a global variable
 				nosePoint=centrePoint;
+				//this is done to make the feature empty so that the new viola jones
+				//co-ordinates can be give the new nosePoint to the optical flow part
 				features=new MatOfPoint();
-				//opticalFlowDetector.detect(mGrayt,mRgbat);
-				//inserting the points into the message as qrguments
-				/*message.arg1= (int) centrePoint.x;
-				message.arg2=(int) centrePoint.y;*/
-
-
-
-
-
-
 				//making the this thread sleep for 10ms
+				//i am doing this to let the processor core rest a bit
 				try {
 					Thread.sleep(10);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
-				//facesArray[i].x
+
 			}
 
 		}//this bracket is where the if for checking 20 frame count ends
 
-		//using optical flow
-		//
-		if(features.toArray().length==0){//if there are no features (points available for tracking)
-			//store this metrics as prevMetrics
-			Log.d("TAG1","I came here near features");
 
+		//******************THIS IS THE CODE FOR OPTICAL FLOW************************************//
+		//if there are no features (points available for tracking)
+		if(features.toArray().length==0){
+			//store this grey matrix as prev Gray Matrix
 			mPrevGrayt=mGrayt.clone();
-			Log.d("TAG1","I have cloned");
 			//make a point array with only one point (for the nose co-ordinate)
 			Point[]points=new Point[1];
+			//i am putting in the nose co-oridnate found by viola jones algo
 			points[0]=nosePoint;
-			Log.d("TAG1","I have made point array");
-			//now the features object has the nose feature a.k.a the nose co-ordinates
+			//now the features object has the nose feature a.k.a the nose
+			// co-ordinates after the following code is exeuted
 			features.fromArray(points);
-			Log.d("TAG1","I got my features");
-			//i am storing these features in an array known as prevFeatures
+			//i am storing these features as  prevFeatures
 			prevFeatures.fromArray(features.toArray());
-			Log.d("TAG1","I came here");
-
 		}else{
-			Log.d("TAG1","I am in else");
+			//the else part is called when there are previous features availabe
+			//for comparison
 			//get where the present nose point feature is and store it in nextFeatures variable
 			Video.calcOpticalFlowPyrLK(mPrevGrayt, mGrayt,prevFeatures, nextFeatures, status, err);
 			//we make a list of point to store the nextFeatures point
@@ -317,13 +293,12 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			Log.d("TAG1","Draw features .size="+drawFeature.size());
 			//we loop on this new point(it is being redundant as there is only one point)
 			for(int j = 0; j<  drawFeature.size(); j++){
-
 				//this code just makes the mesg obj
 				Message message=Message.obtain();
+				//we keep the nose feauture point in point p
+				//it was kept tracked by optical flow
 				Point p = drawFeature.get(j);
-
 				//we draw the point on the image
-
 				Imgproc.circle(mRgbat, p, 5, new Scalar(255));
 				//i am making a bundle for inserting the points
 				Bundle bundle=new Bundle();
@@ -344,20 +319,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				//sending the message with points to the UI thread using handler to control the cursor
 				handler.sendMessage(message);
 			}
+			//keeping this matrix as prevmatrix (the gray matrix)
 			mPrevGrayt = mGrayt.clone();
+			//keeping present features stored for the future as prevFeatures
 			prevFeatures.fromList(nextFeatures.toList());
 		}
-
-
-		//using optical flow
-
-
-		//************************THE CODE FOR VIOLA JONES ENDS HERE**********************//
-
-
-
-
-
 		return mRgbat;
 	}
 
