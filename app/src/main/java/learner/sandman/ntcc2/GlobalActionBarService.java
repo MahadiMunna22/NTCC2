@@ -148,6 +148,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 
 	}
+
+	//variables related to opencv
+	//this var is going to keep the count of all frmes processed from the start
+	int frameCount=0;
+
 	//*************************FUNCTIONS RELATED TO OPENCV****************************//
 	@Override
 	public void onCameraViewStarted(int width, int height) {
@@ -161,6 +166,14 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 	@Override
 	public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+		//increasing frame counts
+		frameCount++;
+		//if the  total number of frames processed till now becomes 10k, then we reset the counter
+		if(frameCount==10000){
+			frameCount=0;
+		}
+
+
 		//setting up the RGBA matrix
 		Mat mRgba=inputFrame.rgba();
 		Mat mRgbat=mRgba.t();
@@ -179,6 +192,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			//Log.d("TAG1","Detection going on");
 			haarCascade.detectMultiScale(mGrayt, faces, 1.1, 2,
 					2, new Size(100,100), new Size());
+
 		}
 		//*****************************************************************************//
 		//*******************************PART 2**********************************************//
@@ -196,6 +210,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			}
 			//facesArray[i].x
 		}
+
+
 
 		return mRgbat;
 	}
