@@ -357,12 +357,6 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	}
 
 
-
-
-
-
-
-
 	//****************************THESE ARE NOT NEEDED************************************8
 	@Override
 	public void onAccessibilityEvent(AccessibilityEvent event) {
