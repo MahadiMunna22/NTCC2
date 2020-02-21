@@ -2,7 +2,9 @@ package learner.sandman.ntcc2;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.util.DisplayMetrics;
@@ -20,18 +22,26 @@ import com.example.android.globalactionbarservice.R;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
+import org.opencv.core.MatOfFloat;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfRect;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
+import org.opencv.video.Video;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 
 
 public class GlobalActionBarService extends AccessibilityService implements CameraBridgeViewBase.CvCameraViewListener2 {
@@ -51,13 +61,24 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	CascadeClassifier haarCascade;
 	File mCascadeFile;
 
+
+	MatOfPoint features;
+	Mat mPrevGrayt;
+	MatOfPoint2f prevFeatures,nextFeatures;
+	MatOfByte status;
+	MatOfFloat err;
+	Point nosePoint;
+
 	@Override
 	protected void onServiceConnected() {
+
 		Log.d("TAG1","STARTed service");
 		//**************SETTINGP UP OPENCV FOR USE****************************//
 		if(OpenCVLoader.initDebug()){
 			Log.d("TAG1","OpenCv started successfully");
 		}
+		//making an optical flow detector for future use
+
 
 		//******************MAKING A LAYOUT FOR THE FACE*************************//
 		//faceFrameLayout=new FrameLayout(this);
@@ -88,7 +109,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
 				PixelFormat.TRANSLUCENT
 		);
-		cursorParams.gravity=Gravity.CENTER;
+		cursorParams.gravity=Gravity.TOP|Gravity.LEFT;
 		Log.d("TAG1","I CAME HERE");
 		LayoutInflater inflater=LayoutInflater.from(this);
 		Log.d("TAG1","I CAME HERE2");
@@ -114,33 +135,55 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		//********************GETTING MY SCREEN MEASUREMENTS************************//
 		DisplayMetrics displayMetrics = new DisplayMetrics();
 		myWindowManager.getDefaultDisplay().getMetrics(displayMetrics);
-		final int height = displayMetrics.heightPixels;
-		final int width = displayMetrics.widthPixels;
+		final int screenHeight = displayMetrics.heightPixels;
+		final int screenWidth = displayMetrics.widthPixels;
+
+		Log.d("TAG1","screenHeight="+screenHeight+",screenWidth="+screenWidth);
 
 		//*********MAKING THE HANDLER TO RECIEVE THE CO_ORDS*********************//
 
 
 
 		handler=new Handler(){
-			int oldX=0,oldY=0;
+
+			int xMultiplicityFactor=1;
+			int yMultiplicityFactor=1;
+
+
+			int xPositionOnBox,yPositionOnBox;
+			int xBoxWidth,yBoxHeight;
+
+			int xPositionOnScreen,yPositionOnScreen;
+			int xScreenWidth=screenWidth*1,yScreenHeight=screenHeight*1;
+
+
+			boolean firstMessageReceived=false;
 			@Override
 			public void handleMessage(Message msg) {
+				//collecting the bundle from the message as received Bundle
+				Bundle receivedBundle=msg.getData();
+				//making an intefer array of length 4 to store
+				//1)x co-ordinate 2)y co-ordinate 3)row size 4)col-size
+				int[] receivedValues=receivedBundle.getIntArray("message");
+				xPositionOnBox=receivedValues[0];
+				yPositionOnBox=receivedValues[1];
 
-				int cursorValueX=width/(120)*msg.arg1-1000;
-				int cursorValueY=height/(50)*msg.arg2-2300;
-				/*if((Math.abs(cursorValueX-oldX)>25) || (Math.abs(cursorValueY-oldY)>25)  ){//if signigficant change
-					//we let the cursor chage and also store value
-					oldX=cursorValueX;oldY=cursorValueY;
-				}else{
-					//we again use the old value
-					cursorValueX=oldX;
-					cursorValueY=oldY;
-				}*/
-				//we update the cursor based on new parameters
-				cursorParams.x=cursorValueX;
-				cursorParams.y=cursorValueY;
-				Log.d("TAG1","face :x="+cursorValueX+",y="+cursorValueY);
+
+
+				xBoxWidth=receivedValues[2];
+				yBoxHeight=receivedValues[3];
+
+				xPositionOnScreen=(xScreenWidth/xBoxWidth)*xPositionOnBox;
+				yPositionOnScreen=(yScreenHeight/yBoxHeight)*yPositionOnBox;
+
+				xPositionOnScreen=xPositionOnScreen*xMultiplicityFactor;
+				yPositionOnScreen=yPositionOnScreen*yMultiplicityFactor;
+
+				cursorParams.x=xPositionOnScreen;
+				cursorParams.y=yPositionOnScreen;
+				Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
 				myWindowManager.updateViewLayout(cursorFrameLayout,cursorParams);
+
 
 
 			}
@@ -156,7 +199,13 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	//*************************FUNCTIONS RELATED TO OPENCV****************************//
 	@Override
 	public void onCameraViewStarted(int width, int height) {
-
+		mPrevGrayt = new Mat();
+		features = new MatOfPoint();
+		prevFeatures = new MatOfPoint2f();
+		nextFeatures = new MatOfPoint2f();
+		status = new MatOfByte();
+		err = new MatOfFloat();
+		nosePoint=new Point();
 	}
 
 	@Override
@@ -166,8 +215,13 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 	@Override
 	public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+
+		//the old centrePoints
+
+
 		//increasing frame counts
 		frameCount++;
+		//Log.d("TAG1","Current Frame Count="+frameCount);
 		//if the  total number of frames processed till now becomes 10k, then we reset the counter
 		if(frameCount==10000){
 			frameCount=0;
@@ -187,29 +241,120 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		//doing the detection work
 		MatOfRect faces = new MatOfRect();
 
-		//********************************PART 1*********************************************//
-		if(haarCascade != null) {
-			//Log.d("TAG1","Detection going on");
-			haarCascade.detectMultiScale(mGrayt, faces, 1.1, 2,
-					2, new Size(100,100), new Size());
 
-		}
-		//*****************************************************************************//
-		//*******************************PART 2**********************************************//
-		Rect[] facesArray = faces.toArray();
-		for (int i = 0; i < facesArray.length; i++) {
-			Imgproc.rectangle(mRgbat, facesArray[i].tl(),facesArray[i].br(), new Scalar(100), 3);
-			Message message=Message.obtain();
-			message.arg1=facesArray[i].x;
-			message.arg2=facesArray[i].y;
-			handler.sendMessage(message);
-			try {
-				Thread.sleep(10);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
+
+		//************************THE CODE FOR VIOLA JONES STARTS HERE**********************//
+		//after every 20 frames i am using viola jones and getting the nasal co-ordinates
+		if(frameCount%30==0){
+			//********************************PART 1*********************************************//
+			if(haarCascade != null) {
+				//Log.d("TAG1","Detection going on");
+				haarCascade.detectMultiScale(mGrayt, faces, 1.1, 2,
+						2, new Size(100,100), new Size());
+
 			}
-			//facesArray[i].x
+			//
+			//*****************************************************************************//
+			//*******************************PART 2**********************************************//
+			Rect[] facesArray = faces.toArray();
+			for (int i = 0; i < facesArray.length; i++) {
+				//this code inserts the squares where the faces have been found
+				Imgproc.rectangle(mRgbat, facesArray[i].tl(),facesArray[i].br(), new Scalar(100), 3);
+
+				//centre point is actually the centre of the square around the face
+				Point centrePoint=new Point();
+				centrePoint.x=	facesArray[i].tl().x/2	+facesArray[i].br().x/2;
+				centrePoint.y=	facesArray[i].tl().y/2	+facesArray[i].br().y/2;
+				nosePoint=centrePoint;
+				features=new MatOfPoint();
+				//opticalFlowDetector.detect(mGrayt,mRgbat);
+				//inserting the points into the message as qrguments
+				/*message.arg1= (int) centrePoint.x;
+				message.arg2=(int) centrePoint.y;*/
+
+
+
+
+
+
+				//making the this thread sleep for 10ms
+				try {
+					Thread.sleep(10);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				//facesArray[i].x
+			}
+
+		}//this bracket is where the if for checking 20 frame count ends
+
+		//using optical flow
+		//
+		if(features.toArray().length==0){//if there are no features (points available for tracking)
+			//store this metrics as prevMetrics
+			Log.d("TAG1","I came here near features");
+
+			mPrevGrayt=mGrayt.clone();
+			Log.d("TAG1","I have cloned");
+			//make a point array with only one point (for the nose co-ordinate)
+			Point[]points=new Point[1];
+			points[0]=nosePoint;
+			Log.d("TAG1","I have made point array");
+			//now the features object has the nose feature a.k.a the nose co-ordinates
+			features.fromArray(points);
+			Log.d("TAG1","I got my features");
+			//i am storing these features in an array known as prevFeatures
+			prevFeatures.fromArray(features.toArray());
+			Log.d("TAG1","I came here");
+
+		}else{
+			Log.d("TAG1","I am in else");
+			//get where the present nose point feature is and store it in nextFeatures variable
+			Video.calcOpticalFlowPyrLK(mPrevGrayt, mGrayt,prevFeatures, nextFeatures, status, err);
+			//we make a list of point to store the nextFeatures point
+			//which is indeed just one point
+			List<Point> drawFeature = nextFeatures.toList();
+			Log.d("TAG1","Draw features .size="+drawFeature.size());
+			//we loop on this new point(it is being redundant as there is only one point)
+			for(int j = 0; j<  drawFeature.size(); j++){
+
+				//this code just makes the mesg obj
+				Message message=Message.obtain();
+				Point p = drawFeature.get(j);
+
+				//we draw the point on the image
+
+				Imgproc.circle(mRgbat, p, 5, new Scalar(255));
+				//i am making a bundle for inserting the points
+				Bundle bundle=new Bundle();
+				//i am giving the tag message to the bundle contents
+				//i am providing the centre co-orinates
+				//i am putting the number of rows and cols i.e width and height of the matrix
+				bundle.putIntArray("message",
+
+						new int[]{(int) drawFeature.get(j).x,
+								(int) drawFeature.get(j).y,
+								mRgbat.cols(),//width
+								mRgbat.rows() //height
+
+						});
+
+				// i am inserting this data into the bundle
+				message.setData(bundle);
+				//sending the message with points to the UI thread using handler to control the cursor
+				handler.sendMessage(message);
+			}
+			mPrevGrayt = mGrayt.clone();
+			prevFeatures.fromList(nextFeatures.toList());
 		}
+
+
+		//using optical flow
+
+
+		//************************THE CODE FOR VIOLA JONES ENDS HERE**********************//
+
+
 
 
 
@@ -244,6 +389,12 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		}
 
 	}
+
+
+
+
+
+
 
 
 	//****************************THESE ARE NOT NEEDED************************************8
