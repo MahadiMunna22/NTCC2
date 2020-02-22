@@ -2,7 +2,6 @@ package learner.sandman.ntcc2;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
-import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,7 +21,6 @@ import com.example.android.globalactionbarservice.R;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfFloat;
@@ -91,7 +89,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		faceParams.gravity= Gravity.TOP|Gravity.LEFT;
 		faceParams.x=0;
 		faceParams.y=0;
-		faceParams.alpha= (float) 0.005;
+		//faceParams.alpha= (float) 0.005;
 		//telling windowmanager to add my faceview on  screen top using my params
 		myWindowManager.addView(faceView,faceParams);
 		//**********************MAKING A LAYOUT FOR THE CURSOR************************//
@@ -139,9 +137,9 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 		handler=new Handler(){
 
-			int xMultiplicityFactor=1;
-			int yMultiplicityFactor=1;
 
+
+			int oldXPositionOnBox, oldYPositionOnBox;
 
 			int xPositionOnBox,yPositionOnBox;
 			int xBoxWidth,yBoxHeight;
@@ -158,26 +156,80 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				//making an intefer array of length 4 to store
 				//1)x co-ordinate 2)y co-ordinate 3)row size 4)col-size
 				int[] receivedValues=receivedBundle.getIntArray("message");
-				//processing the received data
 
-				xPositionOnBox=receivedValues[0];
-				yPositionOnBox=receivedValues[1];
+				//initially it willenter this for loop
+				if(firstMessageReceived==false){
+					//processing the received data initially
+					xPositionOnBox=receivedValues[0];
+					yPositionOnBox=receivedValues[1];
+					xBoxWidth=receivedValues[2];
+					yBoxHeight=receivedValues[3];
+					xPositionOnScreen=(xScreenWidth/xBoxWidth)*xPositionOnBox;
+					yPositionOnScreen=(yScreenHeight/yBoxHeight)*yPositionOnBox;
+					//moving the cursor
+					cursorParams.x=xPositionOnScreen;
+					cursorParams.y=yPositionOnScreen;
+					//Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
+					myWindowManager.updateViewLayout(cursorFrameLayout,cursorParams);
+
+					//storing this position
+					oldXPositionOnBox =xPositionOnScreen;
+					oldYPositionOnBox =yPositionOnScreen;
+
+					firstMessageReceived=true;
+				}else{
+					//in all the later parts it will enter the else part
+					//processing the received data initially
+					xPositionOnBox=receivedValues[0];
+					yPositionOnBox=receivedValues[1];
+					xBoxWidth=receivedValues[2];
+					yBoxHeight=receivedValues[3];
+					xPositionOnScreen=(xScreenWidth/xBoxWidth)*xPositionOnBox;
+					yPositionOnScreen=(yScreenHeight/yBoxHeight)*yPositionOnBox;
+
+					//*************fixing the x position*************
+					if(xPositionOnBox- oldXPositionOnBox >xBoxWidth/20){
+						//going right
+						Log.d("TAG1","GOING RIGHT");
+						cursorParams.x=xPositionOnScreen+screenWidth/20;
+					}else if(xPositionOnBox- oldXPositionOnBox <-xBoxWidth/20){
+						//going left
+						Log.d("TAG1","GOING LEFT");
+						cursorParams.x=xPositionOnScreen-screenWidth/20;
+					}else{
+						//no change occurred
+						Log.d("TAG1","STAYING SAME ON X");
+						cursorParams.x=xPositionOnScreen;
+					}
+					//*************fixing the y position*************
+					if(yPositionOnBox- oldYPositionOnBox >yBoxHeight/200){
+						//going down
+						Log.d("TAG1","GOING DOWN");
+						cursorParams.y=yPositionOnScreen+screenHeight/200;
+					}else if(yPositionOnBox- oldYPositionOnBox <-yBoxHeight/200){
+						//going left
+						Log.d("TAG1","GOING UP");
+						cursorParams.y=yPositionOnScreen-screenHeight/200 ;
+					}else{
+						//no change occurred
+						Log.d("TAG1","Staying same on y");
+						cursorParams.y=yPositionOnScreen;
+					}
 
 
+					//moving the cursor
+					/*cursorParams.x=xPositionOnScreen;
+					cursorParams.y=yPositionOnScreen;*/
+					Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
+					myWindowManager.updateViewLayout(cursorFrameLayout,cursorParams);
+					//storing this position
+					oldXPositionOnBox =xPositionOnBox;
+					oldYPositionOnBox =yPositionOnBox;
 
-				xBoxWidth=receivedValues[2];
-				yBoxHeight=receivedValues[3];
 
-				xPositionOnScreen=(xScreenWidth/xBoxWidth)*xPositionOnBox;
-				yPositionOnScreen=(yScreenHeight/yBoxHeight)*yPositionOnBox;
+				}
 
-				xPositionOnScreen=xPositionOnScreen*xMultiplicityFactor;
-				yPositionOnScreen=yPositionOnScreen*yMultiplicityFactor;
-				//moving the cursor
-				cursorParams.x=xPositionOnScreen;
-				cursorParams.y=yPositionOnScreen;
-				Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
-				myWindowManager.updateViewLayout(cursorFrameLayout,cursorParams);
+
 
 
 
@@ -277,6 +329,9 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			Point[]points=new Point[1];
 			//i am putting in the nose co-oridnate found by viola jones algo
 			points[0]=nosePoint;
+
+
+
 			//now the features object has the nose feature a.k.a the nose
 			// co-ordinates after the following code is exeuted
 			features.fromArray(points);
