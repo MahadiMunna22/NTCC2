@@ -238,7 +238,6 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 
 	}
-
 	//variables related to opencv
 	//this var is going to keep the count of all frmes processed from the start
 	int frameCount=0;
