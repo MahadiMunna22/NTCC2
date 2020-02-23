@@ -56,8 +56,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	//variables related to cameraview and camera listeners
 	CameraBridgeViewBase cameraView;
 	//files and classifiers for image processing
-	CascadeClassifier haarCascade;
-	File mCascadeFile;
+	CascadeClassifier haarCascadeClassifierForFace,haarCascadeClassifierForEyes;
+
 
 
 	MatOfPoint features;
@@ -65,7 +65,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	MatOfPoint2f prevFeatures,nextFeatures;
 	MatOfByte status;
 	MatOfFloat err;
-	Point nosePoint;
+	Point nosePoint,eyePoint1,eyePoint2;
 
 	@Override
 	protected void onServiceConnected() {
@@ -115,14 +115,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		cameraView.enableView();
 		//********************OPENING CASCADE FILES AND SETTING UP THE CLASSIFIERS
 		try {
-			bringInTheCascadeFile();
+			bringInTheCascadeFileForFaceDetection();
+			bringInTheCascadeFileForEyesDetection();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		//the function below loads the haarcascade classifier variable from the concerned files
-		openTheBroughtInCascadeFile();
-
-
 		//********************GETTING MY SCREEN MEASUREMENTS************************//
 		DisplayMetrics displayMetrics = new DisplayMetrics();
 		myWindowManager.getDefaultDisplay().getMetrics(displayMetrics);
@@ -137,9 +134,10 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 		handler=new Handler(){
 
-
+			int centralXPositiononBox,centralYPositiononBox;
 
 			int oldXPositionOnBox, oldYPositionOnBox;
+			int oldXpositionOnScreen,oldYPositionOnScreen;
 
 			int xPositionOnBox,yPositionOnBox;
 			int xBoxWidth,yBoxHeight;
@@ -148,92 +146,87 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			int xScreenWidth=screenWidth*1,yScreenHeight=screenHeight*1;
 
 
-			boolean firstMessageReceived=false;
+			int violaJonesUsed=0;
+
+
 			@Override
 			public void handleMessage(Message msg) {
+				//handleCursorMovementUsingTheMessage(msg);
+				handleCursorMovementUsingTheMessage2(msg);
+
+			}
+
+			private void handleCursorMovementUsingTheMessage2(Message msg){
 				//collecting the bundle from the message as received Bundle
 				Bundle receivedBundle=msg.getData();
 				//making an intefer array of length 4 to store
 				//1)x co-ordinate 2)y co-ordinate 3)row size 4)col-size
 				int[] receivedValues=receivedBundle.getIntArray("message");
+				xPositionOnBox=receivedValues[0];
+				yPositionOnBox=receivedValues[1];
+				xBoxWidth=receivedValues[2];
+				yBoxHeight=receivedValues[3];
+				violaJonesUsed=receivedValues[4];
+				//Log.d("TAG2","I came here");
 
-				//initially it willenter this for loop
-				if(firstMessageReceived==false){
-					//processing the received data initially
-					xPositionOnBox=receivedValues[0];
-					yPositionOnBox=receivedValues[1];
-					xBoxWidth=receivedValues[2];
-					yBoxHeight=receivedValues[3];
+				//if i have not gotten the first message and this is the very first message
+				if(violaJonesUsed ==1){
+					//i declare that i have received the very first message
+					violaJonesUsed =0;
+					centralXPositiononBox= (int) nosePoint.x;
+					centralYPositiononBox= (int) nosePoint.y;
+
 					xPositionOnScreen=(xScreenWidth/xBoxWidth)*xPositionOnBox;
 					yPositionOnScreen=(yScreenHeight/yBoxHeight)*yPositionOnBox;
-					//moving the cursor
+
 					cursorParams.x=xPositionOnScreen;
 					cursorParams.y=yPositionOnScreen;
-					//Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
+					//Log.d("TAG2","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
 					myWindowManager.updateViewLayout(cursorFrameLayout,cursorParams);
 
-					//storing this position
-					oldXPositionOnBox =xPositionOnScreen;
-					oldYPositionOnBox =yPositionOnScreen;
+					oldXPositionOnBox=xPositionOnBox;
+					oldYPositionOnBox=yPositionOnBox;
+					oldXpositionOnScreen=xPositionOnScreen;
+					oldYPositionOnScreen=yPositionOnScreen;
 
-					firstMessageReceived=true;
 				}else{
-					//in all the later parts it will enter the else part
-					//processing the received data initially
-					xPositionOnBox=receivedValues[0];
-					yPositionOnBox=receivedValues[1];
-					xBoxWidth=receivedValues[2];
-					yBoxHeight=receivedValues[3];
-					xPositionOnScreen=(xScreenWidth/xBoxWidth)*xPositionOnBox;
-					yPositionOnScreen=(yScreenHeight/yBoxHeight)*yPositionOnBox;
+					//if i moved right in box
+					if(xPositionOnBox-centralXPositiononBox>15){
+						//the cursor moves right by 20 pixels
+						xPositionOnScreen=oldXpositionOnScreen+20;
+					}//if i moved left
+					else if(xPositionOnBox-centralXPositiononBox<-15){
+						xPositionOnScreen=oldXpositionOnScreen-20;
 
-					//*************fixing the x position*************
-					if(xPositionOnBox- oldXPositionOnBox >xBoxWidth/20){
-						//going right
-						Log.d("TAG1","GOING RIGHT");
-						cursorParams.x=xPositionOnScreen+screenWidth/20;
-					}else if(xPositionOnBox- oldXPositionOnBox <-xBoxWidth/20){
-						//going left
-						Log.d("TAG1","GOING LEFT");
-						cursorParams.x=xPositionOnScreen-screenWidth/20;
-					}else{
-						//no change occurred
-						Log.d("TAG1","STAYING SAME ON X");
-						cursorParams.x=xPositionOnScreen;
 					}
-					//*************fixing the y position*************
-					if(yPositionOnBox- oldYPositionOnBox >yBoxHeight/200){
-						//going down
-						Log.d("TAG1","GOING DOWN");
-						cursorParams.y=yPositionOnScreen+screenHeight/200;
-					}else if(yPositionOnBox- oldYPositionOnBox <-yBoxHeight/200){
-						//going left
-						Log.d("TAG1","GOING UP");
-						cursorParams.y=yPositionOnScreen-screenHeight/200 ;
-					}else{
-						//no change occurred
-						Log.d("TAG1","Staying same on y");
-						cursorParams.y=yPositionOnScreen;
+
+					//if i moved down in the box
+					if(yPositionOnBox-centralYPositiononBox>15){
+						//the cursor moves right by 20 pixels
+						yPositionOnScreen=oldYPositionOnScreen+20;
+					}//if i moved left
+					else if(yPositionOnBox-centralYPositiononBox<-15){
+						yPositionOnScreen=oldYPositionOnScreen-20;
+
 					}
 
 
-					//moving the cursor
-					/*cursorParams.x=xPositionOnScreen;
-					cursorParams.y=yPositionOnScreen;*/
-					Log.d("TAG1","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
+					oldXPositionOnBox=xPositionOnBox;
+					oldYPositionOnBox=yPositionOnBox;
+					oldXpositionOnScreen=xPositionOnScreen;
+					oldYPositionOnScreen=yPositionOnScreen;
+
+					cursorParams.x=xPositionOnScreen;
+					cursorParams.y=yPositionOnScreen;
+					Log.d("TAG2","cursorParams.x="+cursorParams.x+",cursorParams.y="+cursorParams.y);
 					myWindowManager.updateViewLayout(cursorFrameLayout,cursorParams);
-					//storing this position
-					oldXPositionOnBox =xPositionOnBox;
-					oldYPositionOnBox =yPositionOnBox;
 
 
 				}
 
-
-
-
-
 			}
+
+
 		};
 
 
@@ -272,22 +265,34 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		Mat mRgba=inputFrame.rgba();
 		Mat mRgbat=mRgba.t();
 		Core.flip(mRgbat,mRgbat,-1);
-		Imgproc.resize(mRgbat,mRgbat,mRgba.size());
+		//Imgproc.resize(mRgbat,mRgbat,mRgba.size());
+		Imgproc.resize(mRgbat,mRgbat,new Size(mRgba.width(),mRgba.height()),2,1,Imgproc.INTER_LINEAR);
 		//setting up the greyscale matrix
 		Mat mGray=inputFrame.gray();
 		Mat mGrayt=mGray.t();
 		Core.flip(mGrayt,mGrayt,-1);
-		Imgproc.resize(mGrayt,mGrayt,mGray.size());
+		//Imgproc.resize(mGrayt,mGrayt,mGray.size());
+		Imgproc.resize(mGrayt,mGrayt,new Size(mGray.width(),mGray.height()),2,1,Imgproc.INTER_LINEAR);
 		//doing the detection work
+
+		runViolaJonesForFaceDetection(mRgbat, mGrayt);
+
+
+		//runViolaJonesForEyesDetection(mRgbat,mGrayt);
+		runOpticalFlow(mRgbat, mGrayt);
+
+
+		return mRgbat;
+	}
+	private void runViolaJonesForFaceDetection(Mat mRgbat, Mat mGrayt) {
 		MatOfRect faces = new MatOfRect();
-		//************************THE CODE FOR VIOLA JONES STARTS HERE**********************//
 		//after every 30 frames i am using viola jones and getting the nasal co-ordinates
 		if(frameCount%30==0){
 			//********************************PART 1*********************************************//
 			//if the classifiers are available then i do the detection and store the detected faces
 			//in the array
-			if(haarCascade != null) {
-				haarCascade.detectMultiScale(mGrayt, faces, 1.1, 2,
+			if(haarCascadeClassifierForFace != null) {
+				haarCascadeClassifierForFace.detectMultiScale(mGrayt, faces, 1.1, 2,
 						2, new Size(100,100), new Size());
 			}
 			//*******************************PART 2**********************************************//
@@ -317,8 +322,50 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			}
 
 		}//this bracket is where the if for checking 20 frame count ends
+	}
+
+	private void runViolaJonesForEyesDetection(Mat mRgbat, Mat mGrayt) {
+		MatOfRect eyes = new MatOfRect();
+
+		//********************************PART 1*********************************************//
+		//if the classifiers are available then i do the detection and store the detected eyes
+		//in the array
+		if(haarCascadeClassifierForEyes != null) {
+			haarCascadeClassifierForEyes.detectMultiScale(mGrayt, eyes, 1.1, 4,
+					2, new Size(30,30), new Size(80,80));
+		}
+		//*******************************PART 2**********************************************//
+		//eyes array stores the detected eyes...simply speaking
+		Rect[] eyesArray = eyes.toArray();
+		Log.d("TAG2","The eyes array has length ="+eyesArray.length);
+		for (int i = 0; i < eyesArray.length; i++) {
+			//this code inserts the squares where the eyes have been found
+			Imgproc.rectangle(mRgbat, eyesArray[i].tl(),eyesArray[i].br(), new Scalar(100), 3);
 
 
+			Point centrePoint=new Point();
+			centrePoint.x=	eyesArray[i].tl().x/2	+eyesArray[i].br().x/2;
+			centrePoint.y=	eyesArray[i].tl().y/2	+eyesArray[i].br().y/2;
+			//i keep the centrePoint in nose point for KLT ,nosePoint is a global variable
+			//nosePoint=centrePoint;
+			//this is done to make the feature empty so that the new viola jones
+			//co-ordinates can be give the new nosePoint to the optical flow part
+			//features=new MatOfPoint();
+			//making the this thread sleep for 10ms
+			//i am doing this to let the processor core rest a bit
+			try {
+				Thread.sleep(10);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+
+		}
+
+
+
+	}
+
+	private void runOpticalFlow(Mat mRgbat, Mat mGrayt) {
 		//******************THIS IS THE CODE FOR OPTICAL FLOW************************************//
 		//if there are no features (points available for tracking)
 		if(features.toArray().length==0){
@@ -353,19 +400,28 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				//it was kept tracked by optical flow
 				Point p = drawFeature.get(j);
 				//we draw the point on the image
-				Imgproc.circle(mRgbat, p, 5, new Scalar(255));
+				Imgproc.circle(mRgbat, p, 5, new Scalar(255),10);
 				//i am making a bundle for inserting the points
 				Bundle bundle=new Bundle();
 				//i am giving the tag message to the bundle contents
 				//i am providing the centre co-orinates
 				//i am putting the number of rows and cols i.e width and height of the matrix
+
+				int violaJonesUsed;
+				if(frameCount%30==0){
+					violaJonesUsed=1;
+				}else{
+					violaJonesUsed=0;
+				}
+
+
 				bundle.putIntArray("message",
 
 						new int[]{(int) drawFeature.get(j).x,
 								(int) drawFeature.get(j).y,
 								mRgbat.cols(),//width
-								mRgbat.rows() //height
-
+								mRgbat.rows(), //height
+								violaJonesUsed
 						});
 
 				// i am inserting this data into the bundle
@@ -378,14 +434,12 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			//keeping present features stored for the future as prevFeatures
 			prevFeatures.fromList(nextFeatures.toList());
 		}
-		return mRgbat;
 	}
 
-
-	void bringInTheCascadeFile() throws IOException {
+	void bringInTheCascadeFileForFaceDetection() throws IOException {
 		InputStream is = getResources().openRawResource(R.raw.haarcascade_frontalface_default);//smile er jonno cascade file ta nilam
 		File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);//directory banalam jeta private
-		mCascadeFile = new File(cascadeDir,"cascade.xml");//directoryr moddhe cascade.xml file ta rakhlam
+		File mCascadeFile = new File(cascadeDir,"cascade.xml");//directoryr moddhe cascade.xml file ta rakhlam
 		FileOutputStream os = new FileOutputStream(mCascadeFile);
 		//it is stream to write to my new cascade.xml
 		//file
@@ -400,15 +454,36 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		}
 		is.close();
 		os.close();
-	}
-
-	void openTheBroughtInCascadeFile(){
-		haarCascade= new CascadeClassifier(mCascadeFile.getAbsolutePath());//ekta cascade classifier banalam using the file
-		if(!haarCascade.empty()){
+		haarCascadeClassifierForFace = new CascadeClassifier(mCascadeFile.getAbsolutePath());//ekta cascade classifier banalam using the file
+		if(!haarCascadeClassifierForFace.empty()){
 			Log.d("TAG1","The haar Cascde object ain't empty");
 		}
-
 	}
+
+	void bringInTheCascadeFileForEyesDetection() throws IOException {
+		InputStream is = getResources().openRawResource(R.raw.haarcascade_eye);//smile er jonno cascade file ta nilam
+		File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);//directory banalam jeta private
+		File mCascadeFile = new File(cascadeDir,"cascade.xml");//directoryr moddhe cascade.xml file ta rakhlam
+		FileOutputStream os = new FileOutputStream(mCascadeFile);
+		//it is stream to write to my new cascade.xml
+		//file
+
+
+		byte[] buffer = new byte[4096];//ekta byte array banalam buffer naame
+		int bytesRead;//this will collect a  byte of data from input stream
+
+		while((bytesRead = is.read(buffer)) != -1)//is.read reads  from file and puts in buffer and returns koy byte porlo
+		{
+			os.write(buffer, 0, bytesRead);//buffer theke data niye write korche
+		}
+		is.close();
+		os.close();
+		haarCascadeClassifierForEyes = new CascadeClassifier(mCascadeFile.getAbsolutePath());//ekta cascade classifier banalam using the file
+		if(!haarCascadeClassifierForEyes.empty()){
+			Log.d("TAG2","The haar Cascde object for eyes ain't empty");
+		}
+	}
+
 
 
 	//****************************THESE ARE NOT NEEDED************************************8
