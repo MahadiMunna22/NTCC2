@@ -15,6 +15,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import com.example.android.globalactionbarservice.R;
 
@@ -56,7 +57,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	//variables related to cameraview and camera listeners
 	CameraBridgeViewBase cameraView;
 	//files and classifiers for image processing
-	CascadeClassifier haarCascadeClassifierForFace,haarCascadeClassifierForEyes;
+	CascadeClassifier haarCascadeClassifierForFace, haarCascadeClassifierForTeeth;
 
 
 
@@ -116,7 +117,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		//********************OPENING CASCADE FILES AND SETTING UP THE CLASSIFIERS
 		try {
 			bringInTheCascadeFileForFaceDetection();
-			bringInTheCascadeFileForEyesDetection();
+			bringInTheCascadeFileForTeethDetection();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -191,22 +192,22 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 				}else{
 					//if i moved right in box
-					if(xPositionOnBox-centralXPositiononBox>15){
+					if(xPositionOnBox-centralXPositiononBox>20){
 						//the cursor moves right by 20 pixels
-						xPositionOnScreen=oldXpositionOnScreen+20;
+						xPositionOnScreen=oldXpositionOnScreen+25;
 					}//if i moved left
-					else if(xPositionOnBox-centralXPositiononBox<-15){
-						xPositionOnScreen=oldXpositionOnScreen-20;
+					else if(xPositionOnBox-centralXPositiononBox<-20){
+						xPositionOnScreen=oldXpositionOnScreen-25;
 
 					}
 
 					//if i moved down in the box
-					if(yPositionOnBox-centralYPositiononBox>15){
+					if(yPositionOnBox-centralYPositiononBox>20){
 						//the cursor moves right by 20 pixels
-						yPositionOnScreen=oldYPositionOnScreen+20;
+						yPositionOnScreen=oldYPositionOnScreen+25;
 					}//if i moved left
-					else if(yPositionOnBox-centralYPositiononBox<-15){
-						yPositionOnScreen=oldYPositionOnScreen-20;
+					else if(yPositionOnBox-centralYPositiononBox<-20){
+						yPositionOnScreen=oldYPositionOnScreen-25;
 
 					}
 
@@ -278,7 +279,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		runViolaJonesForFaceDetection(mRgbat, mGrayt);
 
 
-		//runViolaJonesForEyesDetection(mRgbat,mGrayt);
+		runViolaJonesForTeethDetection(mRgbat,mGrayt);
 		runOpticalFlow(mRgbat, mGrayt);
 
 
@@ -324,28 +325,28 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		}//this bracket is where the if for checking 20 frame count ends
 	}
 
-	private void runViolaJonesForEyesDetection(Mat mRgbat, Mat mGrayt) {
-		MatOfRect eyes = new MatOfRect();
+	private void runViolaJonesForTeethDetection(Mat mRgbat, Mat mGrayt) {
+		MatOfRect teeth = new MatOfRect();
 
 		//********************************PART 1*********************************************//
-		//if the classifiers are available then i do the detection and store the detected eyes
+		//if the classifiers are available then i do the detection and store the detected teeth
 		//in the array
-		if(haarCascadeClassifierForEyes != null) {
-			haarCascadeClassifierForEyes.detectMultiScale(mGrayt, eyes, 1.1, 4,
-					2, new Size(30,30), new Size(80,80));
+		if(haarCascadeClassifierForTeeth != null) {
+			haarCascadeClassifierForTeeth.detectMultiScale(mGrayt, teeth, 1.1, 4,
+					2, new Size(), new Size());
 		}
 		//*******************************PART 2**********************************************//
-		//eyes array stores the detected eyes...simply speaking
-		Rect[] eyesArray = eyes.toArray();
-		Log.d("TAG2","The eyes array has length ="+eyesArray.length);
-		for (int i = 0; i < eyesArray.length; i++) {
-			//this code inserts the squares where the eyes have been found
-			Imgproc.rectangle(mRgbat, eyesArray[i].tl(),eyesArray[i].br(), new Scalar(100), 3);
+		//teeth array stores the detected teeth...simply speaking
+		Rect[] teethArray = teeth.toArray();
+		Log.d("TAG2","The teeth array has length ="+teethArray.length);
+		for (int i = 0; i < teethArray.length; i++) {
+			//this code inserts the squares where the teeth have been found
+			Imgproc.rectangle(mRgbat, teethArray[i].tl(),teethArray[i].br(), new Scalar(100), 3);
 
 
 			Point centrePoint=new Point();
-			centrePoint.x=	eyesArray[i].tl().x/2	+eyesArray[i].br().x/2;
-			centrePoint.y=	eyesArray[i].tl().y/2	+eyesArray[i].br().y/2;
+			centrePoint.x=	teethArray[i].tl().x/2	+teethArray[i].br().x/2;
+			centrePoint.y=	teethArray[i].tl().y/2	+teethArray[i].br().y/2;
 			//i keep the centrePoint in nose point for KLT ,nosePoint is a global variable
 			//nosePoint=centrePoint;
 			//this is done to make the feature empty so that the new viola jones
@@ -460,8 +461,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		}
 	}
 
-	void bringInTheCascadeFileForEyesDetection() throws IOException {
-		InputStream is = getResources().openRawResource(R.raw.haarcascade_eye);//smile er jonno cascade file ta nilam
+	void bringInTheCascadeFileForTeethDetection() throws IOException {
+		InputStream is = getResources().openRawResource(R.raw.cascadefina);//smile er jonno cascade file ta nilam
 		File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);//directory banalam jeta private
 		File mCascadeFile = new File(cascadeDir,"cascade.xml");//directoryr moddhe cascade.xml file ta rakhlam
 		FileOutputStream os = new FileOutputStream(mCascadeFile);
@@ -478,8 +479,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		}
 		is.close();
 		os.close();
-		haarCascadeClassifierForEyes = new CascadeClassifier(mCascadeFile.getAbsolutePath());//ekta cascade classifier banalam using the file
-		if(!haarCascadeClassifierForEyes.empty()){
+		haarCascadeClassifierForTeeth = new CascadeClassifier(mCascadeFile.getAbsolutePath());//ekta cascade classifier banalam using the file
+		if(!haarCascadeClassifierForTeeth.empty()){
 			Log.d("TAG2","The haar Cascde object for eyes ain't empty");
 		}
 	}
