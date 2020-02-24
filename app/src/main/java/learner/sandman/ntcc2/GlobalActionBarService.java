@@ -1,7 +1,9 @@
 package learner.sandman.ntcc2;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.content.Context;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.os.Bundle;
 import android.os.Handler;
@@ -59,10 +61,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	//files and classifiers for image processing
 	CascadeClassifier haarCascadeClassifierForFace, haarCascadeClassifierForTeeth;
 
+	public int VIOLA_JONES_FRAME_DELAY=30;
 
 	//making it global for some specific purposes
 
-	Rect boxForKLT;
+
 
 	MatOfPoint features;
 	Mat mPrevGrayt;
@@ -70,6 +73,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	MatOfByte status;
 	MatOfFloat err;
 	Point nosePoint,eyePoint1,eyePoint2;
+	int violaJonesUsed;
+
+
+
+
 
 	@Override
 	protected void onServiceConnected() {
@@ -93,7 +101,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		faceParams.gravity= Gravity.TOP|Gravity.LEFT;
 		faceParams.x=0;
 		faceParams.y=0;
-		//faceParams.alpha= (float) 0.005;
+		//faceParams.alpha= (float) ;
 		//telling windowmanager to add my faceview on  screen top using my params
 		myWindowManager.addView(faceView,faceParams);
 		//**********************MAKING A LAYOUT FOR THE CURSOR************************//
@@ -150,7 +158,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			int xScreenWidth=screenWidth*1,yScreenHeight=screenHeight*1;
 
 
-			int violaJonesUsed=0;
+
 
 
 			@Override
@@ -159,6 +167,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				handleCursorMovementUsingTheMessage2(msg);
 
 			}
+
 
 			private void handleCursorMovementUsingTheMessage2(Message msg){
 				//collecting the bundle from the message as received Bundle
@@ -192,26 +201,33 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 					oldYPositionOnBox=yPositionOnBox;
 					oldXpositionOnScreen=xPositionOnScreen;
 					oldYPositionOnScreen=yPositionOnScreen;
-
+					Log.d("TAG100","cursor pos=("+cursorParams.x+","+cursorParams.y+")");
 				}else{
 					//if i moved right in box
 					if(xPositionOnBox-centralXPositiononBox>20){
 						//the cursor moves right by 20 pixels
-						xPositionOnScreen=oldXpositionOnScreen+25;
+						xPositionOnScreen=(oldXpositionOnScreen+10);
+						if(xPositionOnScreen>screenWidth)xPositionOnScreen=screenWidth;
 					}//if i moved left
 					else if(xPositionOnBox-centralXPositiononBox<-20){
-						xPositionOnScreen=oldXpositionOnScreen-25;
-
+						xPositionOnScreen=oldXpositionOnScreen-10;
+						if(xPositionOnScreen<0)xPositionOnScreen=0;
+					}else{
+						xPositionOnScreen=oldXpositionOnScreen;
 					}
 
 					//if i moved down in the box
 					if(yPositionOnBox-centralYPositiononBox>20){
 						//the cursor moves right by 20 pixels
-						yPositionOnScreen=oldYPositionOnScreen+25;
+						yPositionOnScreen=(oldYPositionOnScreen+10);
+						if(yPositionOnScreen>screenHeight)yPositionOnScreen=screenHeight;
 					}//if i moved left
 					else if(yPositionOnBox-centralYPositiononBox<-20){
-						yPositionOnScreen=oldYPositionOnScreen-25;
+						yPositionOnScreen=oldYPositionOnScreen-10;
+						if(yPositionOnScreen<0)yPositionOnScreen=0;
 
+					}else{
+						yPositionOnScreen=oldYPositionOnScreen;
 					}
 
 
@@ -243,6 +259,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	@Override
 	public void onCameraViewStarted(int width, int height) {
 		//these variables are used in KLT
+
 		mPrevGrayt = new Mat();
 		features = new MatOfPoint();
 		prevFeatures = new MatOfPoint2f();
@@ -260,11 +277,13 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	@Override
 	public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
 		//increasing frame counts
-		frameCount++;
+
 		//if the  total number of frames processed till now becomes 10k, then we reset the counter
 		if(frameCount==10000){
 			frameCount=0;
 		}
+
+
 		//setting up the RGBA matrix
 		Mat mRgba=inputFrame.rgba();
 		Mat mRgbat=mRgba.t();
@@ -287,39 +306,50 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 
 
 
+
+
 	runOpticalFlow(mRgbat,mGrayt);
-	/*	if(boxForKLT!=null){
-			runOpticalFlow(mRgbat.submat( (int)boxForKLT.tl().y,(int)boxForKLT.br().y,(int)boxForKLT.tl().x,(int)boxForKLT.tl().x),
-					mGrayt.submat( (int)boxForKLT.tl().y,(int)boxForKLT.br().y,(int)boxForKLT.tl().x,(int)boxForKLT.tl().x)
+		/*if(boxForKLT!=null){
+			runOpticalFlow(mRgbat.submat( (int)boxForKLT.tl().y,(int)boxForKLT.br().y,(int)boxForKLT.tl().x,(int)boxForKLT.br().x),
+					mGrayt.submat( (int)boxForKLT.tl().y,(int)boxForKLT.br().y,(int)boxForKLT.tl().x,(int)boxForKLT.br().x)
 
 			);
 		}else{
 			runOpticalFlow(mRgbat, mGrayt);
 		}*/
-
+		frameCount++;
 		return mRgbat;
 
 	}
 	private void runViolaJonesForFaceDetection(Mat mRgbat, Mat mGrayt) {
-		MatOfRect faces = new MatOfRect();
+		violaJonesUsed=0;
 		//after every 30 frames i am using viola jones and getting the nasal co-ordinates
-		if(frameCount%30==0){
+		if(frameCount%VIOLA_JONES_FRAME_DELAY==0){
+			violaJonesUsed=1;
+			/*if(frameCount%VIOLA_JONES_FRAME_DELAY==0){
+				violaJonesUsed=1;
+			}else{
+				violaJonesUsed=0;
+			}*/
 			//********************************PART 1*********************************************//
 			//if the classifiers are available then i do the detection and store the detected faces
 			//in the array
+			MatOfRect faces = new MatOfRect();
 			if(haarCascadeClassifierForFace != null) {
+
 				haarCascadeClassifierForFace.detectMultiScale(mGrayt, faces, 1.1, 2,
 						2, new Size(100,100), new Size());
 			}
 			//*******************************PART 2**********************************************//
 			//faces array stores the detected faces...simply speaking
 			Rect[]facesArray = faces.toArray();
-			if(facesArray.length!=0){
+			/*if(facesArray.length!=0){
 				boxForKLT=facesArray[0];
-			}
+			}*/
 			//boxForKLT=facesArray[0];
 			for (int i = 0; i < facesArray.length; i++) {
 				//this code inserts the squares where the faces have been found
+
 				Imgproc.rectangle(mRgbat, facesArray[i].tl(),facesArray[i].br(), new Scalar(100), 3);
 
 				//centre point is actually the centre of the square around the face
@@ -334,11 +364,11 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				features=new MatOfPoint();
 				//making the this thread sleep for 10ms
 				//i am doing this to let the processor core rest a bit
-				try {
+			/*	try {
 					Thread.sleep(10);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
-				}
+				}*/
 
 			}
 
@@ -359,11 +389,21 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		//*******************************PART 2**********************************************//
 		//teeth array stores the detected teeth...simply speaking
 		Rect[] teethArray = teeth.toArray();
-		if(teethArray.length>0)
+		if(teethArray.length>0){
+			Imgproc.rectangle(mRgbat, teethArray[0].tl(),teethArray[0].br(), new Scalar(100), 3);
 			Log.d("TAGteeth","Teeth found ="+teethArray.length);
-		for (int i = 0; i < teethArray.length; i++) {
+			Path swipePath = new Path();
+			swipePath.moveTo(cursorParams.x, cursorParams.y);
+			//swipePath.lineTo(500, 500);
+			GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
+			gestureBuilder.addStroke(new GestureDescription.StrokeDescription(swipePath, 0, 150));
+			dispatchGesture(gestureBuilder.build(), null, null);
+			//ges.addStroke(new GestureDescription().);
+		}
+
+		/*for (int i = 0; i < teethArray.length; i++) {
 			//this code inserts the squares where the teeth have been found
-			Imgproc.rectangle(mRgbat, teethArray[i].tl(),teethArray[i].br(), new Scalar(100), 3);
+
 
 
 			Point centrePoint=new Point();
@@ -382,7 +422,7 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				e.printStackTrace();
 			}
 
-		}
+		}*/
 
 
 
@@ -391,6 +431,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	private void runOpticalFlow(Mat mRgbat, Mat mGrayt) {
 		//******************THIS IS THE CODE FOR OPTICAL FLOW************************************//
 		//if there are no features (points available for tracking)
+
+
 		if(features.toArray().length==0){
 			//store this grey matrix as prev Gray Matrix
 			mPrevGrayt=mGrayt.clone();
@@ -430,12 +472,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				//i am providing the centre co-orinates
 				//i am putting the number of rows and cols i.e width and height of the matrix
 
-				int violaJonesUsed;
-				if(frameCount%30==0){
-					violaJonesUsed=1;
-				}else{
-					violaJonesUsed=0;
-				}
+
+
 
 
 				bundle.putIntArray("message",
@@ -450,6 +488,8 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 				// i am inserting this data into the bundle
 				message.setData(bundle);
 				//sending the message with points to the UI thread using handler to control the cursor
+				Log.d("TAG100","I sent violaJonesUsed ="+violaJonesUsed);
+
 				handler.sendMessage(message);
 			}
 			//keeping this matrix as prevmatrix (the gray matrix)
