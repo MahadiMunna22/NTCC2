@@ -3,7 +3,8 @@ package org.opencv.core;
 //javadoc:Point_
 public class Point {
 
-    public double x, y;
+    public int x;
+	public int y;
 
     public Point(double x, double y) {
         this.x = x;

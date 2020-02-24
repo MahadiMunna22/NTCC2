@@ -60,6 +60,9 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 	CascadeClassifier haarCascadeClassifierForFace, haarCascadeClassifierForTeeth;
 
 
+	//making it global for some specific purposes
+
+	Rect boxForKLT;
 
 	MatOfPoint features;
 	Mat mPrevGrayt;
@@ -279,11 +282,23 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		runViolaJonesForFaceDetection(mRgbat, mGrayt);
 
 
-		runViolaJonesForTeethDetection(mRgbat,mGrayt);
-		runOpticalFlow(mRgbat, mGrayt);
+		runViolaJonesForTeethDetection(mRgbat.submat((int) nosePoint.y,mRgbat.rows(),mRgbat.cols()*1/4,mRgbat.cols()*3/4),
+													mGrayt.submat((int) nosePoint.y,mGrayt.rows(),mGrayt.cols()*1/4,mGrayt.cols()*3/4));
 
+
+
+	runOpticalFlow(mRgbat,mGrayt);
+	/*	if(boxForKLT!=null){
+			runOpticalFlow(mRgbat.submat( (int)boxForKLT.tl().y,(int)boxForKLT.br().y,(int)boxForKLT.tl().x,(int)boxForKLT.tl().x),
+					mGrayt.submat( (int)boxForKLT.tl().y,(int)boxForKLT.br().y,(int)boxForKLT.tl().x,(int)boxForKLT.tl().x)
+
+			);
+		}else{
+			runOpticalFlow(mRgbat, mGrayt);
+		}*/
 
 		return mRgbat;
+
 	}
 	private void runViolaJonesForFaceDetection(Mat mRgbat, Mat mGrayt) {
 		MatOfRect faces = new MatOfRect();
@@ -298,13 +313,18 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 			}
 			//*******************************PART 2**********************************************//
 			//faces array stores the detected faces...simply speaking
-			Rect[] facesArray = faces.toArray();
+			Rect[]facesArray = faces.toArray();
+			if(facesArray.length!=0){
+				boxForKLT=facesArray[0];
+			}
+			//boxForKLT=facesArray[0];
 			for (int i = 0; i < facesArray.length; i++) {
 				//this code inserts the squares where the faces have been found
 				Imgproc.rectangle(mRgbat, facesArray[i].tl(),facesArray[i].br(), new Scalar(100), 3);
 
 				//centre point is actually the centre of the square around the face
 				Point centrePoint=new Point();
+
 				centrePoint.x=	facesArray[i].tl().x/2	+facesArray[i].br().x/2;
 				centrePoint.y=	facesArray[i].tl().y/2	+facesArray[i].br().y/2;
 				//i keep the centrePoint in nose point for KLT ,nosePoint is a global variable
@@ -334,11 +354,13 @@ public class GlobalActionBarService extends AccessibilityService implements Came
 		if(haarCascadeClassifierForTeeth != null) {
 			haarCascadeClassifierForTeeth.detectMultiScale(mGrayt, teeth, 1.1, 4,
 					2, new Size(), new Size());
+
 		}
 		//*******************************PART 2**********************************************//
 		//teeth array stores the detected teeth...simply speaking
 		Rect[] teethArray = teeth.toArray();
-		Log.d("TAG2","The teeth array has length ="+teethArray.length);
+		if(teethArray.length>0)
+			Log.d("TAGteeth","Teeth found ="+teethArray.length);
 		for (int i = 0; i < teethArray.length; i++) {
 			//this code inserts the squares where the teeth have been found
 			Imgproc.rectangle(mRgbat, teethArray[i].tl(),teethArray[i].br(), new Scalar(100), 3);
